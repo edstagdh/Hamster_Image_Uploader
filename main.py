@@ -6,7 +6,7 @@ from loguru import logger
 from PySide6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QComboBox, QTextEdit,
-    QFileDialog, QMessageBox, QCheckBox
+    QFileDialog, QMessageBox, QCheckBox, QMenuBar, QMenu
 )
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon
@@ -35,12 +35,23 @@ class UploadWorker(QThread):
         self.log_signal.emit(msg, mode)
 
     async def async_upload(self):
+        self.log_worker_actions(f"Starting...", "info")
+        MAX_SIZE_BYTES = 8_000_000  # maximum allowed file size in bytes
         for idx, filepath in enumerate(self.files, start=1):
             if not self._is_running:
                 self.log_worker_actions("❌ Upload cancelled by user.", "info")
                 break
 
             filename = Path(filepath).name
+            file_size_bytes = Path(filepath).stat().st_size
+
+            if file_size_bytes > MAX_SIZE_BYTES:
+                self.log_worker_actions(
+                    f"❌ Skipping {filename}: File size {file_size_bytes} bytes exceeds 8,000,000 bytes limit.",
+                    "error"
+                )
+                continue
+
             if self.precheck_results.get(filename) == "skip":
                 self.log_worker_actions(f"⚠️ Skipping upload for {filename} (user chose keep).", "info")
                 continue
@@ -104,7 +115,24 @@ class HamsterUploaderGUI(QWidget):
         self.setWindowIcon(QIcon("assets/hamster_uploader.ico"))
         self.setGeometry(300, 100, 700, 500)
 
+        # --- Add menu bar ---
+        self.menu_bar = QMenuBar(self)
+        self.help_menu = QMenu("Help", self)
+        self.menu_bar.addMenu(self.help_menu)
+        self.menu_bar.setStyleSheet("background-color: #2b2b2b; color: #f0f0f0;")
+
+        about_action = self.help_menu.addAction("About")
+        about_action.triggered.connect(self.show_about)
+
+        instructions_action = self.help_menu.addAction("Instructions")
+        instructions_action.triggered.connect(self.show_instructions)
+
+        issues_action = self.help_menu.addAction("Issues")
+        issues_action.triggered.connect(self.show_issues)
+
+        # --- Layout adjustments ---
         self.layout = QVBoxLayout(self)
+        self.layout.setMenuBar(self.menu_bar)  # Add menu bar to layout
 
         # Mode selection
         self.mode_combo = QComboBox()
@@ -163,6 +191,8 @@ class HamsterUploaderGUI(QWidget):
         hbox2.addWidget(self.button_save)
         self.layout.addLayout(hbox2)
 
+        self.layout = QVBoxLayout(self)
+
         # Internal
         self.upload_worker = None
         self.album_id_hidden = None
@@ -195,6 +225,53 @@ class HamsterUploaderGUI(QWidget):
             self.log_actions("⚠️ creds.secret not found, API key and Album ID empty.", "error")
         except json.JSONDecodeError:
             self.log_actions("⚠️ Invalid JSON in creds.secret, API key and Album ID empty.", "error")
+
+    def show_about(self):
+        about_text = f"""
+        <b>Hamster Image Uploader</b><br>
+        Version: {__version__}<br><br>
+        Developed by edstagdh<br><br>
+        This tool allows easy batch uploads of images to Hamster.<br><br>
+        <a href="https://github.com/edstagdh/Hamster_Image_Uploader">
+            GitHub Repository
+        </a>
+        """
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("About Hamster Uploader")
+        msg_box.setTextFormat(Qt.RichText)  # Enable HTML formatting
+        msg_box.setText(about_text)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec()
+
+    def show_instructions(self):
+        instructions_text = f"""
+        <b>Hamster Image Uploader - Instructions</b><br>
+        Version: {__version__}<br><br>
+        <a href="https://github.com/edstagdh/Hamster_Image_Uploader/blob/master/README.md">
+            Instructions are available in README file
+        </a>
+        """
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Instructions")
+        msg_box.setTextFormat(Qt.RichText)  # Enable HTML formatting
+        msg_box.setText(instructions_text)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec()
+
+    def show_issues(self):
+        issues_text = f"""
+        <b>Hamster Image Uploader - Issues</b><br>
+        Version: {__version__}<br><br>
+        <a href="https://github.com/edstagdh/Hamster_Image_Uploader/issues">
+            Please submit an issue via Issues page
+        </a>
+        """
+        msg_box = QMessageBox(self)
+        msg_box.setWindowTitle("Instructions")
+        msg_box.setTextFormat(Qt.RichText)  # Enable HTML formatting
+        msg_box.setText(issues_text)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        msg_box.exec()
 
     def log_actions(self, msg, mode="info"):
         self.log_output.append(msg)
@@ -418,4 +495,3 @@ if __name__ == "__main__":
         exit_code = 1
     finally:
         sys.exit(exit_code)
-

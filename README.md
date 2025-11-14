@@ -30,9 +30,19 @@ Version: See the `VERSION` file
 
 ---
 
-## Screenshots
+## 🛣️ Roadmap
 
-*(Insert screenshots here when available — GUI, progress logging, settings window, etc.)*
+- [ ] Drag-and-drop file selection
+- [ ] Retry queue for failed uploads
+- [ ] Progress bar visualisation
+- [ ] Better error classification and retry logic
+
+---
+
+## Screenshots
+<p align="center">
+<img src="https://hamster.is/images/2025/11/13/image33e223df76f488e7.png"/>
+</p>
 
 ---
 
@@ -44,7 +54,7 @@ Version: See the `VERSION` file
 * **PySide6**
 * **loguru**
 * Additional dependencies listed in `requirements.txt`
-* Valid **Hamster API Key** and **Album ID**
+* Valid **Hamster API Key** and **Album ID**(Optional)
 
 ### Installation
 
@@ -72,7 +82,7 @@ pip install -r requirements.txt
 2. Copy and rename credentials template:
 
    * `creds.secret_Example` → `creds.secret`
-   * Add your `hamster_album_id` and `hamster_api_key`
+   * Add your `hamster_api_key` and `hamster_album_id`(Optional)
 
 ### Running the Application
 
@@ -141,35 +151,3 @@ All issues are logged both in the GUI and the persistent logs.
 ## 📄 License
 
 *MIT License*
-
----
-
-## 🛣️ Roadmap
-
-- [ ] Drag-and-drop file selection
-- [ ] Retry queue for failed uploads
-- [ ] Progress bar visualisation
-- [ ] Better error classification and retry logic
-
----
-
-
-## ⚙️ config.json_Example Documentation
-
-Your `config.json` controls global settings for the uploader.
-
-### Fields
-
-| Key                | Type   | Description                                                                        |
-| ------------------ | ------ | ---------------------------------------------------------------------------------- |
-| `working_path`     | string | Default directory opened when selecting files or folders.                          |
-| `upload_mode`      | string | Either `single` or `group`. Determines UI mode on startup.                         |
-
-### Example
-
-```
-{
-  "working_path": "C:/Users/You/Pictures",
-  "upload_mode": "single"
-}
-```
