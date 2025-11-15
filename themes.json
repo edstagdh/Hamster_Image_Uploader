@@ -1,0 +1,20 @@
+{
+  "light": {
+    "stylesheet": "QWidget { background: #ffffff; color: #000000; }\nQTextEdit { background: #b3b3b3; color: #000000; border: 2px solid #ccc; }\nQMenuBar, QMenu, QMenu::item { background: #f7f7f7; color: #000000; }\nQMenuBar::item:selected { background: #e0e0e0; color: #000000; }\nQMenu::item:selected { background: #e0e0e0; color: #000000; }\nQPushButton { background: #eaeaea; color: #000000; }\nQComboBox { background: #ffffff; color: #000000; border: 1px solid #ccc; }\nQComboBox QAbstractItemView { background: #ffffff; color: #000000; selection-background-color: #e0e0e0; selection-color: #000000; }",
+    "log_colors": {
+      "info": "#000000",
+      "success": "#2e7d32",
+      "warn": "#f57c00",
+      "error": "#d32f2f"
+    }
+  },
+  "dark": {
+    "stylesheet": "QWidget { background: #282828; color: #eaeaea; }\nQTextEdit { background: #404040; color: #eaeaea; border: 2px solid #333; }\nQMenuBar, QMenu, QMenu::item { background: #1b1b1b; color: #eaeaea; }\nQMenuBar::item:selected { background: #333333; color: #ffffff; }\nQMenu::item:selected { background: #444444; color: #ffffff; }\nQPushButton { background: #2b2b2b; color: #eaeaea; }\nQComboBox { background: #1e1e1e; color: #eaeaea; border: 1px solid #444; }\nQComboBox QAbstractItemView { background: #1e1e1e; color: #eaeaea; selection-background-color: #333333; selection-color: #ffffff; }",
+    "log_colors": {
+      "info": "#e0e0e0",
+      "success": "#2e7d32",
+      "warn": "#f57c00",
+      "error": "#d32f2f"
+    }
+  }
+}

@@ -1,6 +1,7 @@
 import sys
 import asyncio
 import json
+import copy
 from pathlib import Path
 from loguru import logger
 from PySide6.QtWidgets import (
@@ -13,6 +14,56 @@ from PySide6.QtGui import QIcon
 
 from upload import hamster_upload_single_image  # your async upload function
 
+# ---------------------- Version ----------------------
+VERSION_FILE = Path(__file__).parent / "VERSION"
+
+try:
+    with open(VERSION_FILE, "r", encoding="utf-8") as f:
+        __version__ = f.read().strip()
+except Exception:
+    __version__ = "unknown"
+
+# ---------------------- Themes ----------------------
+DEFAULT_THEMES = {
+    "light": {
+        "stylesheet": (
+            "QWidget { background: #ffffff; color: #000000; }\n"
+            "QTextEdit { background: #b3b3b3; color: #000000; border: 2px solid #ccc; }\n"
+            "QMenuBar, QMenu, QMenu::item { background: #f7f7f7; color: #000000; }\n"
+            "QMenuBar::item:selected { background: #e0e0e0; color: #000000; }\n"
+            "QMenu::item:selected { background: #e0e0e0; color: #000000; }\n"
+            "QPushButton { background: #eaeaea; color: #000000; }\n"
+            "QComboBox { background: #ffffff; color: #000000; border: 1px solid #ccc; }\n"
+            "QComboBox QAbstractItemView { background: #ffffff; color: #000000; "
+                "selection-background-color: #e0e0e0; selection-color: #000000; }"
+        ),
+        "log_colors": {
+            "info": "#000000",
+            "success": "#2e7d32",
+            "warn": "#f57c00",
+            "error": "#d32f2f"
+        }
+    },
+    "dark": {
+        "stylesheet": (
+            "QWidget { background: #282828; color: #eaeaea; }\n"
+            "QTextEdit { background: #404040; color: #eaeaea; border: 2px solid #333; }\n"
+            "QMenuBar, QMenu, QMenu::item { background: #1b1b1b; color: #eaeaea; }\n"
+            "QMenuBar::item:selected { background: #333333; color: #ffffff; }\n"
+            "QMenu::item:selected { background: #444444; color: #ffffff; }\n"
+            "QPushButton { background: #2b2b2b; color: #eaeaea; }\n"
+            "QComboBox { background: #1e1e1e; color: #eaeaea; border: 1px solid #444; }\n"
+            "QComboBox QAbstractItemView { background: #1e1e1e; color: #eaeaea; "
+                "selection-background-color: #333333; selection-color: #ffffff; }"
+        ),
+        "log_colors": {
+            "info": "#e0e0e0",
+            "success": "#2e7d32",
+            "warn": "#f57c00",
+            "error": "#d32f2f"
+        }
+    }
+}
 
 # ---------------------- Worker Thread ----------------------
 class UploadWorker(QThread):
@@ -26,82 +77,114 @@ class UploadWorker(QThread):
         self.api_key = api_key
         self.mode = mode
         self._is_running = True
-        self.precheck_results = precheck_results
+        self.precheck_results = precheck_results if precheck_results else {}
 
     def run(self):
-        asyncio.run(self.async_upload())
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(self.async_upload())
+        except Exception as e:
+            self.log_worker_actions(f"❌ Worker crashed: {e}", "error")
+        finally:
+            try:
+                loop.stop()
+            except:
+                pass
+            try:
+                loop.close()
+            except:
+                pass
+            asyncio.set_event_loop(None)
 
     def log_worker_actions(self, msg, mode="info"):
         self.log_signal.emit(msg, mode)
 
     async def async_upload(self):
-        self.log_worker_actions(f"Starting...", "info")
+        self.log_worker_actions(f"⏳ Starting...", "info")
         MAX_SIZE_BYTES = 8_000_000  # maximum allowed file size in bytes
-        for idx, filepath in enumerate(self.files, start=1):
-            if not self._is_running:
-                self.log_worker_actions("❌ Upload cancelled by user.", "info")
-                break
+        try:
+            for idx, filepath in enumerate(self.files, start=1):
+                if not self._is_running:
+                    self.log_worker_actions("❌ Upload cancelled by user.", "info")
+                    break
 
-            filename = Path(filepath).name
-            file_size_bytes = Path(filepath).stat().st_size
+                filename = Path(filepath).name
+                # Safely get file size (skip if inaccessible)
+                try:
+                    file_size_bytes = Path(filepath).stat().st_size
+                except Exception as e:
+                    self.log_worker_actions(f"❌ Skipping {filename}: cannot access file ({e}).", "error")
+                    continue
 
-            if file_size_bytes > MAX_SIZE_BYTES:
-                self.log_worker_actions(
-                    f"❌ Skipping {filename}: File size {file_size_bytes} bytes exceeds 8,000,000 bytes limit.",
-                    "error"
-                )
-                continue
+                if file_size_bytes > MAX_SIZE_BYTES:
+                    self.log_worker_actions(
+                        f"❌ Skipping {filename}: File size {file_size_bytes} bytes exceeds 8,000,000 bytes limit.",
+                        "error"
+                    )
+                    continue
 
-            if self.precheck_results.get(filename) == "skip":
-                self.log_worker_actions(f"⚠️ Skipping upload for {filename} (user chose keep).", "info")
-                continue
+                # Guard against missing precheck entry
+                precheck_val = (self.precheck_results.get(filename) or "").lower()
+                if precheck_val == "skip":
+                    self.log_worker_actions(f"⚠️ Skipping upload for {filename} (user chose keep).", "info")
+                    continue
 
-            self.log_worker_actions(f"({idx}/{len(self.files)}) Uploading: {filename}", "info")
-
-            result = await hamster_upload_single_image(
-                filepath, Path(filename).stem, self.album_id, self.api_key, self.mode
-            )
-
-            if result and result.get("Direct_URL"):
-                self.log_worker_actions(f"✅ Uploaded: {filename}", "success")
+                self.log_worker_actions(f"({idx}/{len(self.files)}) Uploading: {filename}", "info")
 
                 try:
-                    # === SINGLE MODE ===
-                    if self.mode == "single":
-                        txt_path = Path(filepath).with_name(f"{Path(filepath).stem}_hamster.txt")
-                        with open(txt_path, "w", encoding="utf-8") as f:
-                            json.dump({filename: result}, f, indent=2)
-                        self.log_worker_actions(f"📝 Wrote single result file: {txt_path}", "info")
-
-                    # === GROUP MODE ===
-                    elif self.mode == "group":
-                        folder = Path(filepath).parent
-                        group_txt_path = folder / f"{folder.name}_hamster_results.txt"
-
-                        # Load existing data if file exists
-                        group_data = {}
-                        if group_txt_path.exists():
-                            try:
-                                with open(group_txt_path, "r", encoding="utf-8") as f:
-                                    group_data = json.load(f)
-                            except json.JSONDecodeError:
-                                self.log_worker_actions(f"⚠️ Invalid JSON in {group_txt_path}, overwriting.", "warn")
-
-                        # Add or update entry
-                        group_data[filename] = result
-
-                        # Write back to file
-                        with open(group_txt_path, "w", encoding="utf-8") as f:
-                            json.dump(group_data, f, indent=2)
-
-                        self.log_worker_actions(f"🗂️ Updated group results file: {group_txt_path}", "info")
-
+                    result = await hamster_upload_single_image(
+                        filepath, Path(filename).stem, self.album_id, self.api_key, self.mode
+                    )
                 except Exception as e:
-                    self.log_worker_actions(f"❌ Failed to write results file for {filename}: {e}", "error")
-            else:
-                self.log_worker_actions(f"❌ Failed: {filename}", "error")
+                    self.log_worker_actions(f"❌ Upload failed for {filename}: {e}", "error")
+                    continue
 
-        self.finished_signal.emit()
+                if result and result.get("Direct_URL"):
+                    self.log_worker_actions(f"✅ Uploaded: {filename}", "success")
+
+                    try:
+                        # === SINGLE MODE ===
+                        if self.mode == "single":
+                            txt_path = Path(filepath).with_name(f"{Path(filepath).stem}_hamster.txt")
+                            with open(txt_path, "w", encoding="utf-8") as f:
+                                json.dump({filename: result}, f, indent=2)
+                            self.log_worker_actions(f"📝 Wrote single result file: {txt_path}", "info")
+
+                        # === GROUP MODE ===
+                        elif self.mode == "group":
+                            folder = Path(filepath).parent
+                            group_txt_path = folder / f"{folder.name}_hamster_results.txt"
+
+                            # Load existing data if file exists
+                            group_data = {}
+                            if group_txt_path.exists():
+                                try:
+                                    with open(group_txt_path, "r", encoding="utf-8") as f:
+                                        group_data = json.load(f)
+                                except json.JSONDecodeError:
+                                    self.log_worker_actions(f"⚠️ Invalid JSON in {group_txt_path}, overwriting.", "warn")
+
+                            # Add or update entry
+                            group_data[filename] = result
+
+                            # Write back to file
+                            with open(group_txt_path, "w", encoding="utf-8") as f:
+                                json.dump(group_data, f, indent=2)
+
+                            self.log_worker_actions(f"🗂️ Updated group results file: {group_txt_path}", "info")
+
+                    except Exception as e:
+                        self.log_worker_actions(f"❌ Failed to write results file for {filename}: {e}", "error")
+                else:
+                    self.log_worker_actions(f"❌ Failed: {filename}", "error")
+
+        except Exception as e:
+            # Top-level unexpected error — log it so UI can show the problem
+            self.log_worker_actions(f"❌ Worker encountered an error: {e}", "error")
+        finally:
+            # Always notify the UI that the worker finished (success, cancel or error)
+            self.finished_signal.emit()
 
     def stop(self):
         self._is_running = False
@@ -118,8 +201,14 @@ class HamsterUploaderGUI(QWidget):
         # --- Add menu bar ---
         self.menu_bar = QMenuBar(self)
         self.help_menu = QMenu("Help", self)
+        self.view_menu = QMenu("View", self)
+        self.menu_bar.addMenu(self.view_menu)
         self.menu_bar.addMenu(self.help_menu)
-        self.menu_bar.setStyleSheet("background-color: #2b2b2b; color: #f0f0f0;")
+
+        self.dark_mode_action = None
+        # create action after menus are in place
+        self.dark_mode_action = self.view_menu.addAction("Dark mode")  # non-checkable by default
+        self.dark_mode_action.triggered.connect(self.on_toggle_dark_mode)
 
         about_action = self.help_menu.addAction("About")
         about_action.triggered.connect(self.show_about)
@@ -174,6 +263,9 @@ class HamsterUploaderGUI(QWidget):
         self.layout.addWidget(QLabel("API Key:"))
         self.layout.addLayout(hbox_api)
 
+        # Keep a structured in-memory log so we can fully re-render on theme change
+        self.log_entries = []  # list of (mode, text) tuples
+
         # Console/log output
         self.log_output = QTextEdit()
         self.log_output.setReadOnly(True)
@@ -191,7 +283,6 @@ class HamsterUploaderGUI(QWidget):
         hbox2.addWidget(self.button_save)
         self.layout.addLayout(hbox2)
 
-        self.layout = QVBoxLayout(self)
 
         # Internal
         self.upload_worker = None
@@ -201,17 +292,45 @@ class HamsterUploaderGUI(QWidget):
         self.mode_changed(self.mode_combo.currentText())
         self.load_settings()
 
+    # --- Modify load_settings() to apply saved view_mode on startup ---
     def load_settings(self):
         # Load config.json
+        view_mode = "light"
         try:
             with open("config.json", "r", encoding="utf-8") as f:
                 config = json.load(f)
                 self.path_input.setText(config.get("working_path", ""))
                 self.mode_combo.setCurrentText(config.get("upload_mode", "single"))
+                view_mode = config.get("view_mode", view_mode)
         except FileNotFoundError:
             self.log_actions("⚠️ config.json not found, using defaults.", "error")
         except json.JSONDecodeError:
             self.log_actions("⚠️ Invalid JSON in config.json, using defaults.", "error")
+
+        try:
+            with open("themes.json", "r", encoding="utf-8") as f:
+                loaded = json.load(f)
+                # Validate minimal structure (must be dict with keys)
+                if isinstance(loaded, dict) and loaded:
+                    self.themes = copy.deepcopy(loaded)
+                else:
+                    self.log_actions("⚠️ Invalid structure in themes.json, using defaults.", "warn")
+                    self.themes = copy.deepcopy(DEFAULT_THEMES)
+        except FileNotFoundError:
+            self.log_actions("⚠️ themes.json not found, using default themes.", "warn")
+            self.themes = copy.deepcopy(DEFAULT_THEMES)
+        except json.JSONDecodeError:
+            self.log_actions("⚠️ Invalid JSON in themes.json, using default themes.", "warn")
+            self.themes = copy.deepcopy(DEFAULT_THEMES)
+
+        # Apply theme (after view_mode resolved)
+        # ensure the dark_mode_action exists
+        try:
+            self.apply_theme(view_mode)
+        except Exception as e:
+            # fall back gracefully
+            self.apply_theme("light")
+            self.log_actions(f"⚠️ Failed to apply theme '{view_mode}': {e}", "error")
 
         # Load creds.secret
         try:
@@ -226,18 +345,89 @@ class HamsterUploaderGUI(QWidget):
         except json.JSONDecodeError:
             self.log_actions("⚠️ Invalid JSON in creds.secret, API key and Album ID empty.", "error")
 
+    def apply_theme(self, theme_name: str):
+        """Apply stylesheet and set current log colors based on theme_name."""
+        theme = None
+        try:
+            theme = (getattr(self, "themes", None) or DEFAULT_THEMES).get(theme_name)
+        except Exception:
+            theme = None
+
+        if not theme:
+            theme = (getattr(self, "themes", None) or DEFAULT_THEMES).get("light", DEFAULT_THEMES["light"])
+
+        stylesheet = theme.get("stylesheet", "")
+        self.setStyleSheet(stylesheet)
+
+        self.current_log_colors = theme.get("log_colors", {}).copy() if isinstance(theme.get("log_colors"), dict) else DEFAULT_THEMES["light"]["log_colors"].copy()
+
+        # Re-render logs using the new theme colors
+        try:
+            self._render_logs()
+        except Exception as e:
+            # avoid recursion: use logger, and append a plain message
+            logger.exception(f"Error while re-rendering logs: {e}")
+            # fallback: if something went wrong, at least show an inline message
+            from html import escape
+            self.log_output.insertHtml(
+                f'<div style="color:#FF0000">⚠️ Could not repaint log entries: {escape(str(e))}</div>'
+            )
+
+        # Update menu text to offer the *other* mode (no checked mark)
+        if getattr(self, "dark_mode_action", None):
+            try:
+                # if currently light, show "Dark mode" to switch; if currently dark, show "Light mode"
+                self.dark_mode_action.setText("Dark mode" if theme_name == "light" else "Light mode")
+            except Exception:
+                pass
+
+        self.current_view_mode = theme_name
+
+    def on_toggle_dark_mode(self):
+        """Toggle between 'light' and 'dark' and persist to config.json."""
+        current = getattr(self, "current_view_mode", "light")
+        new_mode = "dark" if current == "light" else "light"
+
+        # apply immediately
+        self.apply_theme(new_mode)
+
+        # persist to config.json (preserve other keys)
+        try:
+            cfg_path = Path("config.json")
+            cfg = {}
+            if cfg_path.exists():
+                try:
+                    with open(cfg_path, "r", encoding="utf-8") as f:
+                        cfg = json.load(f)
+                except Exception:
+                    cfg = {}
+            cfg["view_mode"] = new_mode
+            cfg.setdefault("available_view_modes", ["light", "dark"])
+            cfg.setdefault("working_path", self.path_input.text())
+            cfg.setdefault("upload_mode", self.mode_combo.currentText())
+            with open(cfg_path, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        except Exception as e:
+            self.log_actions(f"❌ Failed to persist view mode: {e}", "error")
+        else:
+            self.log_actions(f"Switched to {new_mode} theme", "success")
+
     def show_about(self):
         about_text = f"""
-        <b>Hamster Image Uploader</b><br>
+        <b>About Hamster Image Uploader</b><br>
         Version: {__version__}<br><br>
         Developed by edstagdh<br><br>
         This tool allows easy batch uploads of images to Hamster.<br><br>
+        """
+        about_text += """
         <a href="https://github.com/edstagdh/Hamster_Image_Uploader">
             GitHub Repository
-        </a>
-        """
+        </a>""" if self.current_view_mode == "light" else """<a style="color:white" href="https://github.com/edstagdh/Hamster_Image_Uploader">
+            GitHub Repository
+        </a>"""
+
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("About Hamster Uploader")
+        msg_box.setWindowTitle("Hamster Image Uploader - About")
         msg_box.setTextFormat(Qt.RichText)  # Enable HTML formatting
         msg_box.setText(about_text)
         msg_box.setStandardButtons(QMessageBox.Ok)
@@ -245,14 +435,16 @@ class HamsterUploaderGUI(QWidget):
 
     def show_instructions(self):
         instructions_text = f"""
-        <b>Hamster Image Uploader - Instructions</b><br>
-        Version: {__version__}<br><br>
+        Instructions - Version: {__version__}<br><br>
+        """
+        instructions_text += """
         <a href="https://github.com/edstagdh/Hamster_Image_Uploader/blob/master/README.md">
             Instructions are available in README file
-        </a>
-        """
+        </a>""" if self.current_view_mode == "light" else """<a style="color:white" href="https://github.com/edstagdh/Hamster_Image_Uploader/blob/master/README.md">
+            Instructions are available in README file
+        </a>"""
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Instructions")
+        msg_box.setWindowTitle("Hamster Image Uploader - Instructions")
         msg_box.setTextFormat(Qt.RichText)  # Enable HTML formatting
         msg_box.setText(instructions_text)
         msg_box.setStandardButtons(QMessageBox.Ok)
@@ -260,22 +452,47 @@ class HamsterUploaderGUI(QWidget):
 
     def show_issues(self):
         issues_text = f"""
-        <b>Hamster Image Uploader - Issues</b><br>
-        Version: {__version__}<br><br>
+        Issues - Version: {__version__}<br><br>"""
+        issues_text += """
         <a href="https://github.com/edstagdh/Hamster_Image_Uploader/issues">
-            Please submit an issue via Issues page
-        </a>
-        """
+            Please submit an issue via Github Issues page
+        </a>""" if self.current_view_mode == "light" else """<a style="color:white" href="https://github.com/edstagdh/Hamster_Image_Uploader/issues">
+            Please submit an issue via Github Issues page
+        </a>"""
         msg_box = QMessageBox(self)
-        msg_box.setWindowTitle("Instructions")
+        msg_box.setWindowTitle("Hamster Image Uploader - Issues")
         msg_box.setTextFormat(Qt.RichText)  # Enable HTML formatting
         msg_box.setText(issues_text)
         msg_box.setStandardButtons(QMessageBox.Ok)
         msg_box.exec()
 
     def log_actions(self, msg, mode="info"):
-        self.log_output.append(msg)
-        self.log_output.ensureCursorVisible()
+        """
+        Add a log entry to the in-memory list and re-render the QTextEdit.
+        mode: one of 'info', 'success', 'warn', 'error'
+        """
+        # Ensure color map exists
+        default_map = {
+            "info": "#000000",
+            "success": "#2e7d32",
+            "warn": "#f57c00",
+            "error": "#d32f2f"
+        }
+        color_map = getattr(self, "current_log_colors", None) or getattr(self, "themes", {}).get("light", {}).get("log_colors", default_map)
+        color = color_map.get(mode, default_map.get(mode, "#000000"))
+
+        from html import escape
+        safe_msg = escape(msg).replace("\n", "<br>")
+
+        # store structured entry
+        self.log_entries.append((mode, safe_msg))
+        if len(self.log_entries) > 5000:
+            self.log_entries = self.log_entries[-5000:]
+
+        # re-render the whole log using current theme colors
+        self._render_logs()
+
+        # Keep external logger behavior for file/console logs
         if mode == "info":
             logger.info(msg)
         elif mode == "success":
@@ -284,6 +501,52 @@ class HamsterUploaderGUI(QWidget):
             logger.warning(msg)
         else:
             logger.error(msg)
+
+    def _render_logs(self):
+        """
+        Render the in-memory self.log_entries into the QTextEdit using
+        current_log_colors. This is the single source of truth for displayed logs.
+        """
+        try:
+            # Build HTML document body: use paragraphs for each entry.
+            parts = []
+            for mode, safe_msg in self.log_entries:
+                color = (getattr(self, "current_log_colors", {}) or {}).get(mode)
+                if not color:
+                    # fallback map
+                    fallback = {
+                        "info": "#000000",
+                        "success": "#2e7d32",
+                        "warn": "#f57c00",
+                        "error": "#d32f2f"
+                    }
+                    color = fallback.get(mode, "#000000")
+
+                # We wrap each entry in a div with a class so the HTML structure is predictable
+                parts.append(
+                    f'<div class="log-entry log-{mode}" style="color:{color}; white-space: pre-wrap;">'
+                    f'{safe_msg}'
+                    f'</div>'
+                )
+
+            body_html = "".join(parts)
+
+            # Use insertHtml with a minimal HTML wrapper so Qt treats it as rich text
+            full_html = (
+                '<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0//EN" '
+                '"http://www.w3.org/TR/REC-html40/strict.dtd">'
+                '<html><head><meta name="qrichtext" content="1" /><meta charset="utf-8" />'
+                '<style type="text/css">p, li { white-space: pre-wrap; }</style></head>'
+                f'<body>{body_html}</body></html>'
+            )
+
+            # Replace document in one operation to avoid incremental escapes
+            self.log_output.setHtml(full_html)
+            self.log_output.ensureCursorVisible()
+
+        except Exception as e:
+            # Do not call self.log_actions here (would recurse) — use logger
+            logger.exception(f"Failed to render logs: {e}")
 
     def pre_upload_validation(self):
         """Validate that the path input matches the selected mode (group/single)."""
@@ -324,7 +587,7 @@ class HamsterUploaderGUI(QWidget):
         mode = self.mode_combo.currentText()
         if mode == "single":
             files, _ = QFileDialog.getOpenFileNames(
-                self, "Select Image Files", "", "Images (*.jpg *.jpeg *.png *.gif *.webp)"
+                self, "Select Image Files", "", "Images (*.jpg *.jpeg *.png *.gif *.webp *.JPG *.JPEG *.PNG *.GIF *.WEBP)"
             )
             if files:
                 self.path_input.setText(";".join(files))
@@ -339,6 +602,7 @@ class HamsterUploaderGUI(QWidget):
         results = {}
         if mode == "single":
             for filepath in files:
+                filename = Path(filepath).name
                 base_name = Path(filepath).stem
                 txt_path = Path(filepath).parent / f"{base_name}_hamster.txt"
                 if txt_path.exists():
@@ -348,9 +612,9 @@ class HamsterUploaderGUI(QWidget):
                         QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
                     )
                     if answer == QMessageBox.Yes:
-                        results[filepath] = "overwrite"
+                        results[filename] = "overwrite"
                     elif answer == QMessageBox.No:
-                        results[filepath] = "skip"
+                        results[filename] = "skip"
                     else:
                         return None
         else:  # group mode
@@ -373,9 +637,9 @@ class HamsterUploaderGUI(QWidget):
                         QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel
                     )
                     if answer == QMessageBox.Yes:
-                        results[filename] = "Overwrite"
+                        results[filename] = "overwrite"
                     elif answer == QMessageBox.No:
-                        results[filename] = "Skip"
+                        results[filename] = "skip"
                     else:
                         return None
         return results
@@ -413,6 +677,7 @@ class HamsterUploaderGUI(QWidget):
 
             # Pre-upload checks
             precheck_results = self.pre_upload_check(files, mode)
+            # logger.debug(precheck_results)
             if precheck_results is None:
                 self.log_actions("❌ Upload cancelled by user.", "info")
                 return
@@ -428,12 +693,20 @@ class HamsterUploaderGUI(QWidget):
         self.button_start.setEnabled(True)
         self.button_start.setText("Start")
 
+    def closeEvent(self, event):
+        if self.upload_worker and self.upload_worker.isRunning():
+            self.upload_worker.stop()
+            self.upload_worker.wait(3000)
+        super().closeEvent(event)
+
     # ----------------- Save Settings -----------------
     def save_settings(self):
         config = {
             "working_path": self.path_input.text(),
             "upload_mode": self.mode_combo.currentText(),
-            "available_upload_modes": ["group", "single"]
+            "available_upload_modes": ["group", "single"],
+            "view_mode": getattr(self, "current_view_mode", "light"),
+            "available_view_modes": ["light", "dark"]
         }
 
         creds = {}
@@ -472,15 +745,14 @@ class HamsterUploaderGUI(QWidget):
 if __name__ == "__main__":
     logger.add("App_Log_{time:YYYY.MMMM}.log", rotation="30 days", backtrace=True, enqueue=False, catch=True)
 
-    VERSION_FILE = Path(__file__).parent / "VERSION"
-
-    try:
-        with open(VERSION_FILE, "r", encoding="utf-8") as f:
-            __version__ = f.read().strip()
-    except Exception:
-        __version__ = "unknown"
-
     app = QApplication(sys.argv)
+    font = app.font()
+    ps = font.pointSizeF()
+    if ps <= 0:  # fallback when point size not available
+        ps = float(font.pixelSize() or 12.0)
+    font.setPointSizeF(ps * 1.2)
+    app.setFont(font)
+    ps = font.pointSizeF()
     gui = HamsterUploaderGUI()
     gui.show()
 
