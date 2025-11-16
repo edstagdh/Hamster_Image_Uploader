@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Qt, QThread, Signal
 from PySide6.QtGui import QIcon
 
-from upload import hamster_upload_single_image  # your async upload function
+from uploader import hamster_upload_single_image  # your async upload function
 
 # ---------------------- Version ----------------------
 VERSION_FILE = Path(__file__).parent / "VERSION"

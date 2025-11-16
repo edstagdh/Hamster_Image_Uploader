@@ -35,11 +35,13 @@ async def upload_to_hamster(hamster_api_key, data, files=None):
             )
 
             if status_ok and success_message and image_block:
+                thumb_block = resp_json.get("image", {}).get("thumb", {})
                 logger.success(f"[Attempt {attempt}] ✅ Upload successful.")
 
                 result = {
                     "Uploaded_GMT": image_block.get("date_gmt"),
                     "Direct_URL": image_block.get("url"),
+                    "Thumb_URL": thumb_block.get("url"),
                     "Viewer_URL": image_block.get("url_short"),
                     "Delete_URL": image_block.get("delete_url")
                 }
