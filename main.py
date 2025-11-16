@@ -436,6 +436,11 @@ class HamsterUploaderGUI(QWidget):
     def show_instructions(self):
         instructions_text = f"""
         Instructions - Version: {__version__}<br><br>
+        
+        1. Select upload mode: 'single' for individual files, 'group' for folder uploads.<br>
+        2. Browse and select the file(s) or folder path.<br>
+        3. Ensure your Hamster API Key and Hamster Album ID(Optional) are configured in creds.secret OR insert them in relevant input boxes<br>
+        
         """
         instructions_text += """
         <a href="https://github.com/edstagdh/Hamster_Image_Uploader/blob/master/README.md">

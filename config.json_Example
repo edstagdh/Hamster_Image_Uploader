@@ -1,5 +1,13 @@
 {
   "working_path": "",
   "upload_mode": "single",
-  "available_upload_modes": ["group", "single"]
+  "available_upload_modes": [
+    "group",
+    "single"
+  ],
+  "view_mode": "dark",
+  "available_view_modes": [
+    "light",
+    "dark"
+  ]
 }
