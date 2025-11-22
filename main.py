@@ -233,6 +233,7 @@ class HamsterUploaderGUI(QWidget):
         # File/folder selection
         self.path_label = QLabel("Select folder path:")
         self.path_input = QLineEdit()
+        self.ignore_album_missing = None
         self.browse_button = QPushButton("Browse")
         self.browse_button.clicked.connect(self.browse_path)
         hbox = QHBoxLayout()
@@ -300,6 +301,7 @@ class HamsterUploaderGUI(QWidget):
             with open("config.json", "r", encoding="utf-8") as f:
                 config = json.load(f)
                 self.path_input.setText(config.get("working_path", ""))
+                self.ignore_album_missing = config.get("ignore_album_missing", self.ignore_album_missing)
                 self.mode_combo.setCurrentText(config.get("upload_mode", "single"))
                 view_mode = config.get("view_mode", view_mode)
         except FileNotFoundError:
@@ -664,9 +666,12 @@ class HamsterUploaderGUI(QWidget):
             album_id = self.album_input.text().strip() or self.album_id_hidden
             api_key = self.api_input.text().strip() or self.api_key_hidden
 
-            if not album_id or not api_key:
-                QMessageBox.warning(self, "Error", "API key or Album ID not configured.")
+            if not api_key:
+                QMessageBox.warning(self, "Error", "API key not configured, unable to proceed")
                 return
+
+            if not album_id and not self.ignore_album_missing:
+                QMessageBox.warning(self, "Warning", "Album ID not detected, uploading to main profile.")
 
             # Build file list
             if mode == "single":
@@ -711,7 +716,8 @@ class HamsterUploaderGUI(QWidget):
             "upload_mode": self.mode_combo.currentText(),
             "available_upload_modes": ["group", "single"],
             "view_mode": getattr(self, "current_view_mode", "light"),
-            "available_view_modes": ["light", "dark"]
+            "available_view_modes": ["light", "dark"],
+            "ignore_album_missing": self.ignore_album_missing if self.ignore_album_missing is not None else False
         }
 
         creds = {}

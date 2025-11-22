@@ -138,7 +138,7 @@ hamster_uploader/
 
 The application handles and logs:
 
-* API key or album ID missing
+* API key missing
 * Invalid file formats
 * Failed upload attempts
 * Existing output files (Skip/Overwrite prompt)
