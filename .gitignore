@@ -26,3 +26,21 @@ env/
 build/
 dist/
 *.egg-info/
+*.eggs/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# macOS & system files
+.DS_Store
+Thumbs.db
+
+# VS Code (if used)
+.vscode/
+
+# Test and coverage
+htmlcov/
+.tox/
+.nox/
+.coverage
+coverage.xml
