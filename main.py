@@ -70,11 +70,12 @@ class UploadWorker(QThread):
     log_signal = Signal(str, str)
     finished_signal = Signal()
 
-    def __init__(self, files, album_id, api_key, mode, precheck_results):
+    def __init__(self, files, album_id, api_key, site_url, mode, precheck_results):
         super().__init__()
         self.files = files
         self.album_id = album_id
         self.api_key = api_key
+        self.site_url = site_url
         self.mode = mode
         self._is_running = True
         self.precheck_results = precheck_results if precheck_results else {}
@@ -134,7 +135,7 @@ class UploadWorker(QThread):
 
                 try:
                     result = await hamster_upload_single_image(
-                        filepath, Path(filename).stem, self.album_id, self.api_key, self.mode
+                        filepath, Path(filename).stem, self.album_id, self.api_key, self.site_url, self.mode
                     )
                 except Exception as e:
                     self.log_worker_actions(f"❌ Upload failed for {filename}: {e}", "error")
@@ -287,6 +288,7 @@ class HamsterUploaderGUI(QWidget):
 
         # Internal
         self.upload_worker = None
+        self.site_url = None
         self.album_id_hidden = None
         self.api_key_hidden = None
 
@@ -340,6 +342,7 @@ class HamsterUploaderGUI(QWidget):
                 creds = json.load(f)
                 self.album_id_hidden = creds.get("hamster_album_id")
                 self.api_key_hidden = creds.get("hamster_api_key")
+                self.site_url = creds.get("hamster_site_url")
                 self.album_checkbox.setChecked(bool(self.album_id_hidden))
                 self.api_checkbox.setChecked(bool(self.api_key_hidden))
         except FileNotFoundError:
@@ -665,6 +668,7 @@ class HamsterUploaderGUI(QWidget):
             # Use hidden creds if input is empty
             album_id = self.album_input.text().strip() or self.album_id_hidden
             api_key = self.api_input.text().strip() or self.api_key_hidden
+            site_url = self.site_url
 
             if not api_key:
                 QMessageBox.warning(self, "Error", "API key not configured, unable to proceed")
@@ -692,7 +696,7 @@ class HamsterUploaderGUI(QWidget):
                 self.log_actions("❌ Upload cancelled by user.", "info")
                 return
 
-            self.upload_worker = UploadWorker(files, album_id, api_key, mode, precheck_results)
+            self.upload_worker = UploadWorker(files, album_id, api_key, site_url, mode, precheck_results)
             self.upload_worker.log_signal.connect(self.log_actions)
             self.upload_worker.finished_signal.connect(self.upload_finished)
             self.upload_worker.start()

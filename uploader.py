@@ -4,11 +4,11 @@ from loguru import logger
 import os
 
 
-async def upload_to_hamster(hamster_api_key, data, files=None):
+async def upload_to_hamster(hamster_api_key, site_url, data, files=None):
     """
     Upload image using multipart/form-data.
     """
-    url = "https://hamster.is/api/1/upload"
+    url = f"{site_url}/api/1/upload"
     headers = {
         "X-API-Key": hamster_api_key,
         "Accept": "application/json"
@@ -67,7 +67,7 @@ async def upload_to_hamster(hamster_api_key, data, files=None):
     return None
 
 
-async def hamster_upload_single_image(filepath, base_name, hamster_album_id, hamster_api_key, mode):
+async def hamster_upload_single_image(filepath, base_name, hamster_album_id, hamster_api_key, site_url, mode):
     """
     Prepare data for upload, build payload for upload_to_hamster() using multipart/form-data.
     """
@@ -85,6 +85,6 @@ async def hamster_upload_single_image(filepath, base_name, hamster_album_id, ham
 
     with open(filepath, "rb") as f:
         files = {"source": (os.path.basename(filepath), f)}
-        resp_json = await upload_to_hamster(hamster_api_key, data, files)
+        resp_json = await upload_to_hamster(hamster_api_key, site_url, data, files)
 
     return resp_json

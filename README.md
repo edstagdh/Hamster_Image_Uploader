@@ -40,10 +40,10 @@ Version: See the `VERSION` file
 ---
 
 ## Screenshots
-<p align="center">
-<img src="https://hamster.is/images/2025/11/13/image33e223df76f488e7.png"/>
-</p>
 
+<p align="center">
+  <img src="./assets/preview.png" alt="Preview">
+</p>
 ---
 
 ## 🚀 Getting Started
